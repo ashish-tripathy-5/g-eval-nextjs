@@ -1,11 +1,11 @@
-import { BaseMetric } from '../metrics/BaseMetric';  // Assuming BaseMetric is in the metrics folder
-import { LLMTestCase, LLMTestCaseParams } from '../interfaces/interfaces';  // Assuming test_case module exports LLMTestCase and LLMTestCaseParams
+import { BaseMetric } from '../metrics/BaseMetric';  
+import { LLMTestCase, LLMTestCaseParams } from '../interfaces/interfaces';  
 import { constructVerboseLogs, checkLLMTestCaseParams, initializeModel } from '../utils/metric-utils'; 
-import { prettifyList, trimAndLoadJson }  from '@/src/utils/utils'; // Import utility functions
-import { metricProgressIndicator } from '../utils/indicator';  // Progress indicator
-import { GEvalTemplate } from '../utils/GEvalTemplate';  // GEval template handling
-import { ReasonScore, Steps } from '../utils/schema';  // Schema models for response handling
-import GPTModel from '../models/GPTModel'; // Import the GPTModel
+import { prettifyList, trimAndLoadJson }  from '@/src/utils/utils'; 
+import { metricProgressIndicator } from '../utils/indicator';  
+import { GEvalTemplate } from '../utils/GEvalTemplate';  
+import { ReasonScore, Steps } from '../utils/schema';  
+import GPTModel from '../models/GPTModel'; 
 
 const G_EVAL_PARAMS: Record<string, string> = {
   input: "Input",
@@ -49,7 +49,7 @@ export class GEval extends BaseMetric {
     evaluationParams: LLMTestCaseParams[],
     criteria: string | null = null,
     evaluationSteps: string[] | null = null,
-    model: GPTModel | null = null,  // GPTModel in use
+    model: GPTModel | null = null,  
     threshold: number = 0.5,
     asyncMode: boolean = true,
     strictMode: boolean = false,
@@ -67,8 +67,8 @@ export class GEval extends BaseMetric {
     this.verboseMode = verboseMode;
     this._includeGEvalSuffix = includeGEvalSuffix;
 
-    // Initialize the GPT model (You can pass your API key here)
-    this.model = model || new GPTModel("your-openai-api-key", "gpt-4o");
+    // Initialize the GPT model
+    this.model = model || new GPTModel("your-openai-api-key", "gpt-4o-mini");
     this.evaluationModel = this.model ? this.model.model : 'unknown';
   }
 
@@ -82,9 +82,9 @@ export class GEval extends BaseMetric {
     }
 
     this.evaluationSteps = this.evaluationSteps || await this._aGenerateEvaluationSteps();
-    const [gScore, reason] = await this._aEvaluate(testCase);
+    const { score, reason } = await this._aEvaluate(testCase);
 
-    this.score = gScore / 10;
+    this.score = score / 10;
     this.reason = reason;
     this.score = this.strictMode && this.score < this.threshold ? 0 : this.score;
     this.success = this.score >= this.threshold;
@@ -99,7 +99,7 @@ export class GEval extends BaseMetric {
 
     return {
       score: this.score,
-      reason: this.reason || 'No reason provided', // Provide a default reason if undefined
+      reason: this.reason || 'No reason provided',
     };
   }
 
@@ -112,7 +112,7 @@ export class GEval extends BaseMetric {
     const gEvalParamsStr = constructGEvalParamsString(this.evaluationParams);
     const prompt = GEvalTemplate.generateEvaluationSteps(this.criteria ?? '', gEvalParamsStr);
 
-    const result = await this.model?.generate(prompt, ''); // User prompt can be passed here
+    const result = await this.model?.generate(prompt, ''); 
     if (!result) {
       throw new Error("Failed to generate evaluation steps");
     }
@@ -120,8 +120,65 @@ export class GEval extends BaseMetric {
     return data.steps;
   }
 
+  // Generate weighted summed score function (convert from Python)
+  private generateWeightedSummedScore(rawScore: number, rawResponse: any): number {
+    try {
+      // Ensure we are accessing the logprobs correctly
+      const generatedLogprobs = rawResponse?.logprobResult?.content;
+      if (!Array.isArray(generatedLogprobs)) {
+        throw new Error("Expected generatedLogprobs to be an array.");
+      }
+  
+      // Instead of using .find(), manually iterate through the logprobs and find the matching token
+      let scoreToken: any = null;
+      for (const tokenLogprobs of generatedLogprobs) {
+        if (tokenLogprobs.token === rawScore.toString()) {
+          scoreToken = tokenLogprobs;
+          break;
+        }
+      }
+  
+      if (!scoreToken) {
+        throw new Error("Matching token for the raw score not found.");
+      }
+  
+      const tokenLinearProbability: Record<number, number> = {};
+      let sumLinearProbability = 0;
+      const minLogprob = Math.log(0.01);
+  
+      for (const tokenLogprob of scoreToken.top_logprobs) {
+        const logprob = tokenLogprob.logprob;
+        const token = tokenLogprob.token;
+  
+        // Skip low-probability tokens and non-numeric tokens
+        if (logprob < minLogprob || isNaN(Number(token))) {
+          continue;
+        }
+  
+        const linearProb = Math.exp(logprob);
+        const tokenScore = parseInt(token, 10);
+  
+        // Accumulate linear probabilities and their associated scores
+        tokenLinearProbability[tokenScore] = (tokenLinearProbability[tokenScore] || 0) + linearProb;
+        sumLinearProbability += linearProb;
+      }
+  
+      let sumOfWeightedScores = 0;
+      for (const [score, prob] of Object.entries(tokenLinearProbability)) {
+        sumOfWeightedScores += parseFloat(score) * prob;
+      }
+  
+      // Return the weighted summed score
+      return sumOfWeightedScores / sumLinearProbability;
+    } catch (error) {
+      console.error("Error generating weighted summed score:", error);
+      throw new Error("Failed to generate weighted summed score");
+    }
+  }
+  
+
   // Asynchronous evaluation
-  private async _aEvaluate(testCase: LLMTestCase): Promise<[number, string]> {
+  private async _aEvaluate(testCase: LLMTestCase): Promise<{ score: number; reason: string }> {
     let text = '';
     this.evaluationParams.forEach(param => {
       text += `${G_EVAL_PARAMS[param]}:\n${(testCase as any)[param]} \n\n`;
@@ -135,14 +192,36 @@ export class GEval extends BaseMetric {
     );
     console.log("Constructed prompt:", prompt);
 
-    const result = await this.model?.generate(prompt, '');  // User prompt can be passed here
-    if (!result) {
-      throw new Error("Failed to generate evaluation results");
-    }
-    const data = trimAndLoadJson(result);
-    console.log("Parsed OpenAI response:", data);
+    try {
+      const result = await this.model?.generateRawResponse(prompt,'', true, 20 );
+      const data = trimAndLoadJson(result?.content ?? '');
+      
 
-    return [data.score, data.reason];
+      const reason = data.reason;
+      const score = data.score;
+      console.log("wo score", score);
+      console.log("wo reason", reason);
+
+      if (this.strictMode) {
+        return { score, reason };
+      }
+      
+
+      try {
+        const weightedSummedScore = this.generateWeightedSummedScore(score, result);
+        console.log("w score", weightedSummedScore);
+        console.log("w reason", reason);
+        return { score: weightedSummedScore, reason };
+      } catch (e) {
+        return { score, reason };
+      }
+    } catch (error) {
+      console.error("Error during evaluation:", error);
+
+      const fallbackResult = await this.model?.generate(prompt, '') ?? '';
+      const data = trimAndLoadJson(fallbackResult);
+      return { score: data.score, reason: data.reason };
+    }
   }
 
   // Helper method to generate numbered evaluation steps
