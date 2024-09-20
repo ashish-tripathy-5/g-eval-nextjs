@@ -6,6 +6,7 @@
 The **GEval API** provides a method for evaluating model-generated outputs using the GEval framework. It assesses how well the model's output matches expected results based on custom criteria, evaluation steps, and other optional parameters.
 
 G-Eval paper: https://arxiv.org/abs/2303.16634
+
 G-Eval Python Implementation: https://github.com/confident-ai/deepeval
 
 ## API Endpoint
