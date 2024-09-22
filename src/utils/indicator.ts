@@ -1,4 +1,4 @@
-import { BaseMetric } from '../src/metrics/BaseMetric';
+import { BaseMetric } from '../metrics/BaseMetric';
 import { Console } from 'console';
 
 export async function metricProgressIndicator(

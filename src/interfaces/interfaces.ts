@@ -44,3 +44,17 @@ export enum LLMTestCaseParams {
     reason: string;
   }
   
+  // Add these type definitions near the top of the file
+export interface RawResponse {
+  logprobResult?: {
+    content: Array<ScoreToken>;
+  };
+}
+
+export type ScoreToken = {
+  token: string;
+  top_logprobs: Array<{
+    token: string;
+    logprob: number;
+  }>;
+};

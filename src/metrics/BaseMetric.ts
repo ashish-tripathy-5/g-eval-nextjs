@@ -5,7 +5,7 @@ import { LLMTestCase } from '../interfaces/interfaces';
 abstract class BaseMetric {
     threshold: number = 0.5;
     score: number | null = null;
-    scoreBreakdown: Record<string, any> | null = null;
+    scoreBreakdown: Record<string, unknown> | null = null;
     reason: string | null = null;
     success: boolean | null = null;
     evaluationModel: string | null = null;

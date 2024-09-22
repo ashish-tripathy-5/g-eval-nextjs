@@ -3,7 +3,7 @@
 import { v4 as uuidv4 } from 'uuid'; // for UUID generation
 
 // Trim and load JSON from a string
-export function trimAndLoadJson(inputString: string): any {
+export function trimAndLoadJson(inputString: string): unknown {
   const start = inputString.indexOf('{');
   const end = inputString.lastIndexOf('}') + 1;
   
@@ -32,11 +32,9 @@ export function prettifyList(items: string[]): string {
 
 // Get or create event loop
 export function getOrCreateEventLoop(): void {
-    try {
-      const loop = process.nextTick; // This doesn't actually return an EventLoop, so no need to return anything
-      return;
-    } catch (error) {
-      const newLoop = setImmediate;
-      return;
-    }
+  try {
+    process.nextTick(() => {}); // Use nextTick without assigning it
+  } catch (error) {
+    setImmediate(() => {}); // Use setImmediate without assigning it
   }
+}

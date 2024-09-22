@@ -16,8 +16,8 @@ export function processLLMTestCases(llmTestCases: LLMTestCase[], testCaseParams:
   return llmTestCases.map((testCase) => {
     const result: Record<string, string> = {};
     testCaseParams.forEach((param) => {
-      const value = (testCase as any)[param];
-      if (value) result[param] = value;
+      const value = testCase[param as keyof LLMTestCase];
+      if (value && typeof value === 'string') result[param] = value;
     });
     return result;
   });
@@ -36,7 +36,7 @@ export function constructVerboseLogs(metric: BaseMetric, steps: string[]): strin
 }
 
 // Check LLM test case params
-export function checkLLMTestCaseParams(testCase: LLMTestCase, requiredParams: LLMTestCaseParams[], metric: BaseMetric): void {
+export function checkLLMTestCaseParams(testCase: LLMTestCase, requiredParams: LLMTestCaseParams[]): void {
   requiredParams.forEach((param) => {
     if (!(param in testCase)) {
       throw new Error(`Missing parameter: ${param}`);

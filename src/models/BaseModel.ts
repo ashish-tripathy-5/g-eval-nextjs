@@ -14,8 +14,5 @@ export abstract class DeepEvalBaseModel {
   }
   
   export abstract class DeepEvalBaseLLM extends DeepEvalBaseModel {
-    //abstract generate(...args: any[]): string;
-  
-    abstract generate(...args: any[]): Promise<string>;
+    abstract generate(finalSystemPrompt: string, userPrompt: string): Promise<string>;
   }
-  

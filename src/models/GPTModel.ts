@@ -1,11 +1,13 @@
 import OpenAI from 'openai';
+import { DeepEvalBaseLLM } from './BaseModel';
+import { RawResponse } from '../interfaces/interfaces';  // Make sure to import the interface
 
-export class GPTModel {
+export class GPTModel extends DeepEvalBaseLLM {
   private openai: OpenAI;
   private _model: string;
 
-  constructor(apiKey: string, model: string = "gpt-4o") {
-    // Initialize the OpenAI client with the provided API key
+  constructor(apiKey: string, model: string = "gpt-4o-mini") {
+    super();
     this.openai = new OpenAI({ apiKey });
     this._model = model;
   }
@@ -48,7 +50,7 @@ export class GPTModel {
     userPrompt: string,
     logprobs: boolean,
     top_logprobs: number
-  ): Promise<{ content: string, logprobResult: any}> {
+  ): Promise<{ content: string, logprobResult?: RawResponse['logprobResult'] }> {
     try {
       const completion = await this.openai.chat.completions.create({
         model: this._model,
@@ -64,7 +66,7 @@ export class GPTModel {
 
       const result = completion.choices[0]?.message?.content?.trim();
 
-      const response_metadata = completion.choices[0]?.logprobs; // Get log probabilities
+      const response_metadata = completion.choices[0]?.logprobs as RawResponse['logprobResult']; // Get log probabilities
 
       if (!result) {
         throw new Error("No content received from the model");

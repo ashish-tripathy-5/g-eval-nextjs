@@ -1,11 +1,13 @@
 import { BaseMetric } from '../metrics/BaseMetric';  
-import { LLMTestCase, LLMTestCaseParams } from '../interfaces/interfaces';  
-import { constructVerboseLogs, checkLLMTestCaseParams, initializeModel } from '../utils/metric-utils'; 
+import { LLMTestCase, LLMTestCaseParams, RawResponse, ScoreToken } from '../interfaces/interfaces';  
+import { constructVerboseLogs, checkLLMTestCaseParams } from '../utils/metric-utils'; 
 import { prettifyList, trimAndLoadJson }  from '@/src/utils/utils'; 
 import { metricProgressIndicator } from '../utils/indicator';  
 import { GEvalTemplate } from '../utils/GEvalTemplate';  
-import { ReasonScore, Steps } from '../utils/schema';  
+//import { ReasonScore, Steps } from '../utils/schema';  
 import GPTModel from '../models/GPTModel'; 
+
+type LLMTestCaseKey = keyof LLMTestCase;
 
 const G_EVAL_PARAMS: Record<string, string> = {
   input: "Input",
@@ -74,7 +76,7 @@ export class GEval extends BaseMetric {
 
   // Asynchronous measure implementation
   async aMeasure(testCase: LLMTestCase, showIndicator: boolean = true): Promise<{ score: number; reason: string }> {
-    checkLLMTestCaseParams(testCase, this.evaluationParams, this);
+    checkLLMTestCaseParams(testCase, this.evaluationParams);
 
     this.evaluationCost = 0;
     if (showIndicator) {
@@ -116,21 +118,19 @@ export class GEval extends BaseMetric {
     if (!result) {
       throw new Error("Failed to generate evaluation steps");
     }
-    const data = trimAndLoadJson(result);
+    const data = trimAndLoadJson(result) as { steps: string[] };
     return data.steps;
   }
 
   // Generate weighted summed score function (convert from Python)
-  private generateWeightedSummedScore(rawScore: number, rawResponse: any): number {
+  private generateWeightedSummedScore(rawScore: number, rawResponse: RawResponse): number {
     try {
-      // Ensure we are accessing the logprobs correctly
       const generatedLogprobs = rawResponse?.logprobResult?.content;
       if (!Array.isArray(generatedLogprobs)) {
         throw new Error("Expected generatedLogprobs to be an array.");
       }
   
-      // Instead of using .find(), manually iterate through the logprobs and find the matching token
-      let scoreToken: any = null;
+      let scoreToken: ScoreToken | null = null;
       for (const tokenLogprobs of generatedLogprobs) {
         if (tokenLogprobs.token === rawScore.toString()) {
           scoreToken = tokenLogprobs;
@@ -181,7 +181,7 @@ export class GEval extends BaseMetric {
   private async _aEvaluate(testCase: LLMTestCase): Promise<{ score: number; reason: string }> {
     let text = '';
     this.evaluationParams.forEach(param => {
-      text += `${G_EVAL_PARAMS[param]}:\n${(testCase as any)[param]} \n\n`;
+      text += `${G_EVAL_PARAMS[param]}:\n${testCase[param as LLMTestCaseKey]} \n\n`;
     });
 
     const gEvalParamsStr = constructGEvalParamsString(this.evaluationParams);
@@ -194,8 +194,7 @@ export class GEval extends BaseMetric {
 
     try {
       const result = await this.model?.generateRawResponse(prompt,'', true, 20 );
-      const data = trimAndLoadJson(result?.content ?? '');
-      
+      const data = trimAndLoadJson(result?.content ?? '') as { reason: string; score: number };
 
       const reason = data.reason;
       const score = data.score;
@@ -208,7 +207,7 @@ export class GEval extends BaseMetric {
       
 
       try {
-        const weightedSummedScore = this.generateWeightedSummedScore(score, result);
+        const weightedSummedScore = result ? this.generateWeightedSummedScore(score, result) : score;
         console.log("w score", weightedSummedScore);
         console.log("w reason", reason);
         return { score: weightedSummedScore, reason };
@@ -219,7 +218,7 @@ export class GEval extends BaseMetric {
       console.error("Error during evaluation:", error);
 
       const fallbackResult = await this.model?.generate(prompt, '') ?? '';
-      const data = trimAndLoadJson(fallbackResult);
+      const data = trimAndLoadJson(fallbackResult) as { score: number; reason: string };
       return { score: data.score, reason: data.reason };
     }
   }
